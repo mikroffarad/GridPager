@@ -21,7 +21,7 @@ a **fast, visual, and interactive** way to organize your workflow.
 
 ## 🖼️ Screenshot / Demo
 
-*(Add a GIF or screenshot here of your new 3x2 grid pager in action!)*
+![3x2 grid pager in action](https://github.com/user-attachments/assets/6be4fc70-51b9-4c84-8f18-ba5b59880708)
 
 ## ⚡ Compatibility
 
