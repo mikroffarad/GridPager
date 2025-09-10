@@ -18,4 +18,8 @@
     <EmbeddedResource Include="Resources/icon.ico" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="System.Text.Json" Version="9.0.9" />
+  </ItemGroup>
+
 </Project>

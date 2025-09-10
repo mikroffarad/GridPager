@@ -1,6 +1,6 @@
 using System;
 
-namespace Switchie
+namespace GridPager
 {
 
     public interface IIVirtualDesktop { }
@@ -21,6 +21,7 @@ namespace Switchie
         IIVirtualDesktop ivd { get; set; }
         IWindowsVirtualDesktop Current { get; }
         IWindowsVirtualDesktop FromIndex(int index);
+        IWindowsVirtualDesktop GetAt(int index);
     }
 
 }

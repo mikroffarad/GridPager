@@ -1,4 +1,4 @@
-namespace Switchie
+namespace GridPager
 {
 
     public class WindowsVersion

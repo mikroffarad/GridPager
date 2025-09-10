@@ -4,7 +4,7 @@ using System.IO;
 using System.Reflection;
 using System.Windows.Forms;
 
-namespace Switchie
+namespace GridPager
 {
 
     public class Helpers

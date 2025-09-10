@@ -1,169 +1,384 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Drawing;
-using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace Switchie
+namespace GridPager
 {
     public class MainForm : Form
     {
-        private Point dragOffset;
-        private bool _isAppPinned = false;
+        private List<VirtualDesktopThumbnail> _desktopThumbnails = new List<VirtualDesktopThumbnail>();
+        private Button _addButton;
+        private ToolbarSettings _settings;
         private int _activeDesktopIndex = 0;
-        private bool _forceAlwaysOnTop = false;
-        private string _windowsHash = string.Empty;
-        private List<VirtualDesktop> _virtualDesktops = new List<VirtualDesktop>();
+        private Timer _updateTimer;
 
-        public int BorderSize { get; set; } = 1;
-        public int PagerHeight { get; set; } = 40;
-        public bool IsDraggingWindow { get; set; }
-        public int VirtualDesktopSpacing { get; set; } = 4;
-        public Color DesktopColor { get; set; } = Color.FromArgb(64, 64, 64);
-        public Color WindowColor { get; set; } = Color.Gray;
-        public Color WindowBorderColor { get; set; } = Color.Silver;
-        public Color ActiveWindowColor { get; set; } = Color.Silver;
-        public Color ActiveWindowBorderColor { get; set; } = Color.White;
-        public Color ActiveDesktopBorderColor { get; set; } = Color.White;
-        public ConcurrentBag<Window> Windows = new ConcurrentBag<Window>();
+        // Optimized grid configuration for taskbar height limit (50px max)
+        private const int GRID_COLUMNS = 3;
+        private const int GRID_ROWS = 2;
+        private const int MAX_DESKTOPS = GRID_COLUMNS * GRID_ROWS; // 6 desktops max
+        private const int THUMBNAIL_WIDTH = 48;  // Smaller for compact design
+        private const int THUMBNAIL_HEIGHT = 20; // Much smaller to fit in taskbar
+        private const int THUMBNAIL_SPACING = 1; // Minimal spacing
+        private const int FORM_PADDING = 2;      // Minimal padding
 
-        public MainForm()
+        public MainForm(ToolbarSettings settings = null)
+        {
+            _settings = settings ?? new ToolbarSettings();
+
+            InitializeComponent();
+            CreateDesktopThumbnails();
+            CreateAddButton();
+            SetupUpdateTimer();
+        }
+
+        private void InitializeComponent()
         {
             SuspendLayout();
-            DoubleBuffered = true;
-            AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
-            AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(64)))), ((int)(((byte)(64)))), ((int)(((byte)(64)))));
-            ClientSize = new System.Drawing.Size(1, 1);
-            ControlBox = false;
-            AllowDrop = true;
-            MinimumSize = new System.Drawing.Size(1, 1);
+
+            AutoScaleDimensions = new SizeF(6F, 13F);
+            AutoScaleMode = AutoScaleMode.Font;
+            BackColor = Color.FromArgb(25, 25, 25); // Dark for taskbar integration
+            FormBorderStyle = FormBorderStyle.None;
+            Name = "MainForm";
+            ShowInTaskbar = false;
             StartPosition = FormStartPosition.Manual;
-            FormBorderStyle = System.Windows.Forms.FormBorderStyle.None;
-            MaximizeBox = false;
-            MinimizeBox = false;
-            Name = "frmMain";
-            TopMost = true;
-            Icon = new System.Drawing.Icon(new MemoryStream(Helpers.GetResourceFromAssembly(typeof(Program), "Switchie.Resources.icon.ico")));
-            Enumerable.Range(0, WindowsVirtualDesktop.GetInstance().Count).ToList().ForEach(x =>
-            {
-                VirtualDesktop desktop = new VirtualDesktop(x, this, new Point(_virtualDesktops.Sum(y => y.Size.Width), 0));
-                MouseUp += desktop.OnMouseUp;
-                MouseDown += desktop.OnMouseDown;
-                MouseMove += desktop.OnMouseMove;
-                DragOver += desktop.OnDragOver;
-                DragDrop += desktop.OnDragDrop;
-                _virtualDesktops.Add(desktop);
-            });
-            Size = new Size(_virtualDesktops.Sum(x => x.Size.Width), PagerHeight);
-            MinimumSize = Size;
-            MaximumSize = Size;
-            ClientSize = Size;
-            Location = new System.Drawing.Point((Screen.PrimaryScreen.Bounds.Width / 2) - (Size.Width / 2), Screen.PrimaryScreen.WorkingArea.Bottom - Size.Height);
+            TopMost = false;
+
+            // Calculate form size - optimized for max 50px height
+            int formWidth = (GRID_COLUMNS * THUMBNAIL_WIDTH) + ((GRID_COLUMNS - 1) * THUMBNAIL_SPACING) + (FORM_PADDING * 2);
+            int formHeight = (GRID_ROWS * THUMBNAIL_HEIGHT) + ((GRID_ROWS - 1) * THUMBNAIL_SPACING) + (FORM_PADDING * 2);
+
+            // Ensure we don't exceed taskbar height
+            formHeight = Math.Min(formHeight, 46); // Leave some margin for taskbar
+
+            Size = new Size(formWidth, formHeight);
+
             ResumeLayout(false);
-            Shown += OnShown;
-            MouseUp += OnMouseUp;
-            MouseDown += OnMouseDown;
-            MouseMove += OnMouseMove;
         }
 
-        private void OnShown(object sender, EventArgs e)
+        private void CreateDesktopThumbnails()
         {
-            Task.Run(async () =>
+            try
             {
-                while (!Program.ApplicationClosing.IsCancellationRequested)
+                // Clear existing thumbnails
+                foreach (var thumbnail in _desktopThumbnails)
                 {
-                    Invoke(new Action(() =>
-                    {
-                        try
-                        {
-                            if (_forceAlwaysOnTop)
-                                WindowManager.SetAlwaysOnTop(Handle, _forceAlwaysOnTop);
-                            Windows = new ConcurrentBag<Window>(WindowManager.GetOpenWindows());
-                            var hash = $"{_activeDesktopIndex}{Windows.Sum(x => Math.Abs(x.Dimensions.X))}{Windows.Sum(x => Math.Abs(x.Dimensions.Y))}{Windows.Sum(x => x.Dimensions.Width)}{Windows.Sum(x => x.Dimensions.Height)}{string.Join("", Windows.Select(x => x.IsActive ? 1 : 0))}{string.Join("", Windows.Select(x => x.VirtualDesktopIndex))}";
-                            if (hash != _windowsHash)
-                            {
-                                _windowsHash = hash;
-                                Invalidate();
-                            }
-                        }
-                        catch { }
-                    }));
-                    await Task.Delay(1);
+                    Controls.Remove(thumbnail);
+                    thumbnail.Dispose();
                 }
-            });
-            Task.Run(async () =>
-            {
-                while (!Program.ApplicationClosing.IsCancellationRequested)
+                _desktopThumbnails.Clear();
+
+                // Get actual desktop count
+                var virtualDesktops = WindowsVirtualDesktop.GetInstance();
+                int actualDesktopCount = Math.Min(virtualDesktops.Count, MAX_DESKTOPS);
+
+                // Create thumbnails in grid layout
+                for (int i = 0; i < MAX_DESKTOPS; i++)
                 {
-                    Invoke(new Action(() =>
-                    {
-                        if (!_isAppPinned)
-                        {
-                            try
-                            {
-                                WindowsVirtualDesktopManager.GetInstance().PinApplication(Handle);
-                                _isAppPinned = true;
-                            }
-                            catch { }
-                        }
-                        try
-                        {
-                            _activeDesktopIndex = WindowsVirtualDesktopManager.GetInstance().FromDesktop(WindowsVirtualDesktop.GetInstance().Current);
-                            Windows = new ConcurrentBag<Window>(WindowManager.GetOpenWindows());
-                            Invalidate();
-                        }
-                        catch { }
-                    }));
-                    await Task.Delay(50);
+                    var thumbnail = new VirtualDesktopThumbnail(i);
+                    thumbnail.Size = new Size(THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT);
+
+                    // Calculate grid position
+                    int row = i / GRID_COLUMNS;
+                    int col = i % GRID_COLUMNS;
+
+                    int x = FORM_PADDING + (col * (THUMBNAIL_WIDTH + THUMBNAIL_SPACING));
+                    int y = FORM_PADDING + (row * (THUMBNAIL_HEIGHT + THUMBNAIL_SPACING));
+
+                    thumbnail.Location = new Point(x, y);
+                    thumbnail.Anchor = AnchorStyles.Left | AnchorStyles.Top;
+
+                    // Show/hide thumbnail based on actual desktop count
+                    thumbnail.Visible = i < actualDesktopCount;
+                    thumbnail.Enabled = i < actualDesktopCount;
+
+                    _desktopThumbnails.Add(thumbnail);
+                    Controls.Add(thumbnail);
                 }
-            });
-        }
-
-        private void OnMouseUp(object sender, MouseEventArgs e)
-        {
-            IsDraggingWindow = false;
-            Cursor = Cursors.Default;
-            if ((e.Button & MouseButtons.Right) == MouseButtons.Right)
+            }
+            catch (Exception ex)
             {
-                _forceAlwaysOnTop = false;
-                ContextMenuStrip menu = new ContextMenuStrip();
-                Helpers.AddMenuItem(this, menu, new ToolStripMenuItem() { Text = "About" }, () => { MessageBox.Show($"Switchie{Environment.NewLine}v1.1.5{Environment.NewLine}{Environment.NewLine}Made by darkguy2008", "About"); _forceAlwaysOnTop = true; });
-                Helpers.AddMenuItem(this, menu, new ToolStripMenuItem() { Text = "Exit" }, () => { Environment.Exit(1); });
-                menu.Opened += (ss, ee) => _forceAlwaysOnTop = false;
-                menu.Show(this, PointToClient(Cursor.Position));
+                // If virtual desktop API fails, show at least one thumbnail
+                var thumbnail = new VirtualDesktopThumbnail(0);
+                thumbnail.Size = new Size(THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT);
+                thumbnail.Location = new Point(FORM_PADDING, FORM_PADDING);
+                _desktopThumbnails.Add(thumbnail);
+                Controls.Add(thumbnail);
             }
         }
 
-        private void OnMouseDown(object sender, MouseEventArgs e)
+        private void CreateAddButton()
         {
-            if ((e.Button & MouseButtons.Middle) == MouseButtons.Middle)
+            _addButton = new Button();
+            _addButton.Size = new Size(THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT);
+            _addButton.Text = "+";
+            _addButton.Font = new Font("Segoe UI", 8, FontStyle.Bold);
+            _addButton.ForeColor = Color.White;
+            _addButton.BackColor = Color.FromArgb(70, 70, 70);
+            _addButton.FlatStyle = FlatStyle.Flat;
+            _addButton.FlatAppearance.BorderColor = Color.FromArgb(100, 100, 100);
+            _addButton.FlatAppearance.BorderSize = 1;
+            _addButton.UseVisualStyleBackColor = false;
+            _addButton.Click += AddButton_Click;
+
+            // Position add button - we'll update this in UpdateAddButton
+            UpdateAddButton();
+
+            Controls.Add(_addButton);
+        }
+
+        private void UpdateAddButton()
+        {
+            try
             {
-                IsDraggingWindow = true;
-                dragOffset = e.Location;
+                var virtualDesktops = WindowsVirtualDesktop.GetInstance();
+                int actualDesktopCount = virtualDesktops.Count;
+
+                // Show add button only if we can add more desktops
+                bool canAddMore = actualDesktopCount < MAX_DESKTOPS;
+                _addButton.Visible = canAddMore;
+                _addButton.Enabled = canAddMore;
+
+                if (canAddMore)
+                {
+                    // Position add button in the next available slot
+                    int nextIndex = Math.Min(actualDesktopCount, MAX_DESKTOPS - 1);
+                    int row = nextIndex / GRID_COLUMNS;
+                    int col = nextIndex % GRID_COLUMNS;
+
+                    int x = FORM_PADDING + (col * (THUMBNAIL_WIDTH + THUMBNAIL_SPACING));
+                    int y = FORM_PADDING + (row * (THUMBNAIL_HEIGHT + THUMBNAIL_SPACING));
+
+                    _addButton.Location = new Point(x, y);
+                }
+            }
+            catch
+            {
+                _addButton.Visible = false;
             }
         }
 
-        private void OnMouseMove(object sender, MouseEventArgs e)
+        private void AddButton_Click(object sender, EventArgs e)
         {
-            if (IsDraggingWindow)
+            try
             {
-                Cursor = Cursors.SizeAll;
-                Location = new Point(e.X + Location.X - dragOffset.X, e.Y + Location.Y - dragOffset.Y);
+                MessageBox.Show("Use Windows key + Ctrl + D to create a new desktop\n\nTip: Use Ctrl+Alt+Arrow keys for navigation!",
+                               "Create Desktop", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                // Refresh the thumbnails after a short delay
+                Task.Delay(1000).ContinueWith(_ =>
+                {
+                    if (!IsDisposed)
+                    {
+                        Invoke(new Action(() =>
+                        {
+                            CreateDesktopThumbnails();
+                            UpdateAddButton();
+                        }));
+                    }
+                });
             }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to create new desktop: {ex.Message}", "Error",
+                               MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void SetupUpdateTimer()
+        {
+            _updateTimer = new Timer();
+            _updateTimer.Interval = 500; // Reduced from 1000 to 500ms for faster updates
+            _updateTimer.Tick += UpdateActiveDesktop;
+            _updateTimer.Start();
+        }
+
+        private void UpdateActiveDesktop(object sender, EventArgs e)
+        {
+            try
+            {
+                var virtualDesktops = WindowsVirtualDesktop.GetInstance();
+                var currentDesktop = virtualDesktops.Current;
+                int newActiveIndex = WindowsVirtualDesktopManager.GetInstance().FromDesktop(currentDesktop);
+
+                if (newActiveIndex != _activeDesktopIndex)
+                {
+                    _activeDesktopIndex = newActiveIndex;
+
+                    // Update thumbnail states
+                    for (int i = 0; i < _desktopThumbnails.Count; i++)
+                    {
+                        _desktopThumbnails[i].IsActiveDesktop = (i == _activeDesktopIndex);
+                    }
+                }
+
+                // Check if desktop count changed
+                int actualDesktopCount = Math.Min(virtualDesktops.Count, MAX_DESKTOPS);
+                bool needsUpdate = false;
+
+                for (int i = 0; i < _desktopThumbnails.Count; i++)
+                {
+                    bool shouldBeVisible = i < actualDesktopCount;
+                    if (_desktopThumbnails[i].Visible != shouldBeVisible)
+                    {
+                        _desktopThumbnails[i].Visible = shouldBeVisible;
+                        _desktopThumbnails[i].Enabled = shouldBeVisible;
+                        needsUpdate = true;
+                    }
+                }
+
+                if (needsUpdate)
+                {
+                    UpdateAddButton();
+                }
+
+                // Update thumbnails with current window information
+                foreach (var thumbnail in _desktopThumbnails.Where(t => t.Visible))
+                {
+                    thumbnail.RefreshContent();
+                }
+            }
+            catch
+            {
+                // Ignore errors during update
+            }
+        }
+
+        public void ForceUpdateActiveDesktop()
+        {
+            try
+            {
+                // Immediately update active desktop without waiting for timer
+                UpdateActiveDesktop(null, null);
+                System.Diagnostics.Debug.WriteLine("Force update of active desktop completed");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in ForceUpdateActiveDesktop: {ex.Message}");
+            }
+        }
+
+        protected override void OnMouseClick(MouseEventArgs e)
+        {
+            base.OnMouseClick(e);
+
+            if (e.Button == MouseButtons.Right)
+            {
+                ShowContextMenu(e.Location);
+            }
+        }
+
+        private void ShowContextMenu(Point location)
+        {
+            var menu = new ContextMenuStrip();
+
+            // Add hotkey info
+            var hotkeyInfo = new ToolStripMenuItem("Navigation: Ctrl+Alt+Arrows");
+            hotkeyInfo.Enabled = false;
+            menu.Items.Add(hotkeyInfo);
+
+            var moveWindowInfo = new ToolStripMenuItem("Move Window: Ctrl+Alt+WASD");
+            moveWindowInfo.Enabled = false;
+            menu.Items.Add(moveWindowInfo);
+            menu.Items.Add(new ToolStripSeparator());
+
+            // Test hotkeys
+            var testHotkeys = new ToolStripMenuItem("Test Navigation");
+            testHotkeys.Click += (s, e) => {
+                MessageBox.Show("Navigation Keys:\nCtrl+Alt+Arrows - Switch between desktops\n\nMove Window Keys:\nCtrl+Alt+W/A/S/D - Move active window to adjacent desktop\n\nBoth support wrapping at grid edges!",
+                               "Test Hotkeys", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            };
+            menu.Items.Add(testHotkeys);
+
+            // Clear attention states (manual fix for orange highlighting)
+            var clearAttentionItem = new ToolStripMenuItem("Clear Orange Highlighting");
+            clearAttentionItem.Click += async (s, e) => {
+                try
+                {
+                    await WindowAttentionManager.ClearAllWindowAttentionStates();
+                    MessageBox.Show("Cleared orange highlighting from all windows.",
+                                   "Attention States Cleared", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error clearing attention states: {ex.Message}",
+                                   "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+            menu.Items.Add(clearAttentionItem);
+
+            // Refresh button
+            var refreshItem = new ToolStripMenuItem("Refresh");
+            refreshItem.Click += (s, e) => {
+                CreateDesktopThumbnails();
+                UpdateAddButton();
+            };
+            menu.Items.Add(refreshItem);
+
+            menu.Items.Add(new ToolStripSeparator());
+
+            // About
+            var aboutItem = new ToolStripMenuItem("About");
+            aboutItem.Click += (s, e) => {
+                MessageBox.Show($"GridPager - Grid Virtual Desktop Navigator v1.3.2{Environment.NewLine}{Environment.NewLine}" +
+                               $"Compact Layout: 3×2 grid (max 6 desktops){Environment.NewLine}" +
+                               $"Current Desktops: {WindowsVirtualDesktop.GetInstance().Count}{Environment.NewLine}" +
+                               $"Navigation: Ctrl+Alt+Arrow Keys{Environment.NewLine}" +
+                               $"Move Window: Ctrl+Alt+WASD{Environment.NewLine}" +
+                               $"Both with grid wrapping support{Environment.NewLine}" +
+                               $"Manual fix: Clear Orange Highlighting{Environment.NewLine}{Environment.NewLine}" +
+                               $"Based on Switchie by darkguy2008{Environment.NewLine}" +
+                               $"GridPager fork with enhanced grid navigation", "About GridPager");
+            };
+            menu.Items.Add(aboutItem);
+
+            // Hide toolbar
+            var hideItem = new ToolStripMenuItem("Hide");
+            hideItem.Click += (s, e) => Hide();
+            menu.Items.Add(hideItem);
+
+            menu.Show(this, location);
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            _updateTimer?.Stop();
+            base.OnFormClosing(e);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _updateTimer?.Dispose();
+                _addButton?.Dispose();
+                foreach (var thumbnail in _desktopThumbnails)
+                {
+                    thumbnail.Dispose();
+                }
+            }
+            base.Dispose(disposing);
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
-            base.OnPaint(e);
-            try { _virtualDesktops.ForEach(x => x.OnPaint(e)); }
-            catch
+            // Minimal border - just a simple line
+            using (var pen = new Pen(Color.FromArgb(60, 60, 60), 1))
             {
-                WindowsVirtualDesktop.Restart();
-                WindowsVirtualDesktopManager.Restart();
+                e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+            }
+        }
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                cp.ExStyle |= 0x00000080; // WS_EX_TOOLWINDOW
+                return cp;
             }
         }
     }

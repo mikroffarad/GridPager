@@ -1,5 +1,5 @@
 using System;
-namespace Switchie
+namespace GridPager
 {
 
     public class WindowsVirtualDesktop
@@ -17,11 +17,11 @@ namespace Switchie
             if (WindowsVirtualDesktop._instance == null)
             {
                 if (Program.WindowsVersion.IsWin11())
-                    _instance = new Switchie.VirtualDesktopAPI.Win11.WindowsVirtualDesktop();
+                    _instance = new GridPager.VirtualDesktopAPI.Win11.WindowsVirtualDesktop();
                 else if (Program.WindowsVersion.IsWin10())
-                    _instance = new Switchie.VirtualDesktopAPI.Win10.WindowsVirtualDesktop();
+                    _instance = new GridPager.VirtualDesktopAPI.Win10.WindowsVirtualDesktop();
                 else if (Program.WindowsVersion.IsWin10LTSC())
-                    _instance = new Switchie.VirtualDesktopAPI.Win10LTSC.WindowsVirtualDesktop();
+                    _instance = new GridPager.VirtualDesktopAPI.Win10LTSC.WindowsVirtualDesktop();
                 else
                     throw new PlatformNotSupportedException();
             }
@@ -40,11 +40,11 @@ namespace Switchie
             if (WindowsVirtualDesktopManager._instance == null)
             {
                 if (Program.WindowsVersion.IsWin11())
-                    _instance = new Switchie.VirtualDesktopAPI.Win11.WindowsVirtualDesktopManager();
+                    _instance = new GridPager.VirtualDesktopAPI.Win11.WindowsVirtualDesktopManager();
                 else if (Program.WindowsVersion.IsWin10())
-                    _instance = new Switchie.VirtualDesktopAPI.Win10.WindowsVirtualDesktopManager();
+                    _instance = new GridPager.VirtualDesktopAPI.Win10.WindowsVirtualDesktopManager();
                 else if (Program.WindowsVersion.IsWin10LTSC())
-                    _instance = new Switchie.VirtualDesktopAPI.Win10LTSC.WindowsVirtualDesktopManager();
+                    _instance = new GridPager.VirtualDesktopAPI.Win10LTSC.WindowsVirtualDesktopManager();
                 else
                     throw new PlatformNotSupportedException();
             }

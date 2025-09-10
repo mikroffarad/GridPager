@@ -2,7 +2,7 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace Switchie.VirtualDesktopAPI.Win11
+namespace GridPager.VirtualDesktopAPI.Win11
 {
 
     public class WindowsVirtualDesktopAPI
@@ -214,6 +214,7 @@ namespace Switchie.VirtualDesktopAPI.Win11
         public WindowsVirtualDesktop(IIVirtualDesktop desktop) { this.ivd = desktop; }
         public void MakeVisible() => _windowsVirtualDesktopManager.VirtualDesktopManagerInternal.SwitchDesktop(IntPtr.Zero, (WindowsVirtualDesktopAPI.IVirtualDesktop)ivd);
         public IWindowsVirtualDesktop FromIndex(int index) => new WindowsVirtualDesktop(_windowsVirtualDesktopManager.GetDesktop(index));
+        public IWindowsVirtualDesktop GetAt(int index) => FromIndex(index);
 
         public int Count
         {
